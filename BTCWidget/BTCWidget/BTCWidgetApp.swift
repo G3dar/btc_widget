@@ -1,3 +1,10 @@
+//
+//  BTCWidgetApp.swift
+//  BTCWidget
+//
+//  Created by German Heller on 12/18/25.
+//
+
 import SwiftUI
 
 @main
