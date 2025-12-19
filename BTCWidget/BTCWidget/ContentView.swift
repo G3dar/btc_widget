@@ -9,6 +9,7 @@ import SwiftUI
 import Charts
 import ActivityKit
 import Combine
+import WidgetKit
 
 struct ContentView: View {
     @State private var bitcoinData: BitcoinData?
@@ -19,7 +20,7 @@ struct ContentView: View {
     @State private var countdown = 10
     @Environment(\.scenePhase) private var scenePhase
 
-    // Auto-refresh timer (every 10 seconds to avoid API rate limits)
+    // Auto-refresh timer (every 10 seconds)
     private let refreshTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
     // Countdown timer (every 1 second)
     private let countdownTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -44,6 +45,9 @@ struct ContentView: View {
 
                     if let data = bitcoinData {
                         lastUpdatedView(date: data.lastUpdated)
+                    }
+
+                    if !isLoading {
                         countdownView
                     }
                 }
@@ -311,6 +315,7 @@ struct ContentView: View {
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     self.bitcoinData = data
+                    self.errorMessage = nil
                     self.isLoading = false
                 }
 
@@ -320,10 +325,12 @@ struct ContentView: View {
                 } else if ActivityAuthorizationInfo().areActivitiesEnabled {
                     liveActivityManager.startLiveActivity(with: data)
                 }
+
+                // Refresh widget
+                WidgetCenter.shared.reloadAllTimelines()
             }
         } catch {
             await MainActor.run {
-                // Only show error if we were showing loading indicator
                 if showLoading {
                     self.errorMessage = error.localizedDescription
                 }
@@ -335,21 +342,30 @@ struct ContentView: View {
     // MARK: - XAPO Deep Link
 
     private func openXAPO() {
-        // Try to open XAPO app directly
-        let schemes = ["xapo://", "xapobank://", "xapo-bank://"]
+        // Try common XAPO URL schemes directly
+        let schemes = ["xapobank://", "xapo://", "xapo-bank://"]
 
-        for scheme in schemes {
-            if let url = URL(string: scheme),
-               UIApplication.shared.canOpenURL(url) {
-                UIApplication.shared.open(url)
+        func tryScheme(at index: Int) {
+            guard index < schemes.count else {
+                // All schemes failed, open App Store
+                if let appStoreURL = URL(string: "itms-apps://apps.apple.com/app/id1560681080") {
+                    UIApplication.shared.open(appStoreURL)
+                }
                 return
+            }
+
+            if let url = URL(string: schemes[index]) {
+                UIApplication.shared.open(url, options: [:]) { success in
+                    if !success {
+                        tryScheme(at: index + 1)
+                    }
+                }
+            } else {
+                tryScheme(at: index + 1)
             }
         }
 
-        // Fallback to App Store
-        if let appStoreURL = URL(string: "https://apps.apple.com/app/id1560681080") {
-            UIApplication.shared.open(appStoreURL)
-        }
+        tryScheme(at: 0)
     }
 }
 
