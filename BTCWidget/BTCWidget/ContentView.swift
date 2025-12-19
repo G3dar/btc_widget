@@ -343,7 +343,14 @@ struct ContentView: View {
 
     private func openXAPO() {
         // Try common XAPO URL schemes directly
-        let schemes = ["xapobank://", "xapo://", "xapo-bank://"]
+        let schemes = [
+            "xapobank://",
+            "xapo://",
+            "xapo-bank://",
+            "com.xapo.bank://",
+            "xapobank://app",
+            "xapo://app"
+        ]
 
         func tryScheme(at index: Int) {
             guard index < schemes.count else {
