@@ -16,11 +16,11 @@ struct ContentView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @StateObject private var liveActivityManager = LiveActivityManager.shared
-    @State private var countdown = 5
+    @State private var countdown = 10
     @Environment(\.scenePhase) private var scenePhase
 
-    // Auto-refresh timer (every 5 seconds)
-    private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    // Auto-refresh timer (every 10 seconds to avoid API rate limits)
+    private let refreshTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
     // Countdown timer (every 1 second)
     private let countdownTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -73,14 +73,14 @@ struct ContentView: View {
         }
         .onReceive(refreshTimer) { _ in
             if scenePhase == .active {
-                countdown = 5
+                countdown = 10
                 Task {
                     await loadData(showLoading: false)
                 }
             }
         }
         .onReceive(countdownTimer) { _ in
-            if scenePhase == .active && countdown > 1 {
+            if scenePhase == .active && countdown > 0 {
                 countdown -= 1
             }
         }
