@@ -13,7 +13,7 @@ import WidgetKit
 
 struct ContentView: View {
     @State private var bitcoinData: BitcoinData?
-    @State private var selectedRange: TimeRange = .twentyFourHours
+    @State private var selectedRange: TimeRange = .sixHours
     @State private var isLoading = true
     @State private var errorMessage: String?
     @StateObject private var liveActivityManager = LiveActivityManager.shared
@@ -146,7 +146,7 @@ struct ContentView: View {
     // MARK: - Time Range Selector
 
     private var timeRangeSelector: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 12) {
             ForEach(TimeRange.allCases) { range in
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -155,23 +155,23 @@ struct ContentView: View {
                 } label: {
                     Text(range.displayName)
                         .font(.subheadline.bold())
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(
-                            selectedRange == range
-                                ? Color.orange
-                                : Color.clear
-                        )
                         .foregroundColor(
                             selectedRange == range
                                 ? .white
                                 : .primary
                         )
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(selectedRange == range
+                                    ? Color.orange
+                                    : Color(.systemGray5))
+                        )
                 }
+                .buttonStyle(.plain)
             }
         }
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - Stats Section
