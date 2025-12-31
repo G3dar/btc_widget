@@ -14,13 +14,28 @@ struct MiniChartView: View {
         self.showGradient = showGradient
     }
 
+    // Calculate Y-axis range with 4% minimum to avoid exaggerating small fluctuations
+    private func calculateAxisRange(data: [Double]) -> (min: Double, max: Double, range: Double) {
+        let dataMin = data.min() ?? 0
+        let dataMax = data.max() ?? 1
+        let midPrice = (dataMin + dataMax) / 2
+        let minRange = midPrice * 0.04  // 4% minimum range
+        let actualRange = dataMax - dataMin
+
+        if actualRange >= minRange {
+            return (dataMin, dataMax, actualRange)
+        } else {
+            let halfMinRange = minRange / 2
+            return (midPrice - halfMinRange, midPrice + halfMinRange, minRange)
+        }
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let data = prices.map { $0.price }
-            let minPrice = data.min() ?? 0
-            let maxPrice = data.max() ?? 1
-            let range = maxPrice - minPrice
-            let normalizedRange = range > 0 ? range : 1
+            let axisRange = calculateAxisRange(data: data)
+            let minPrice = axisRange.min
+            let normalizedRange = axisRange.range > 0 ? axisRange.range : 1
 
             let path = createPath(
                 data: data,
@@ -119,13 +134,28 @@ struct MonochromeMiniChartView: View {
         self.lineWidth = lineWidth
     }
 
+    // Calculate Y-axis range with 4% minimum to avoid exaggerating small fluctuations
+    private func calculateAxisRange(data: [Double]) -> (min: Double, max: Double, range: Double) {
+        let dataMin = data.min() ?? 0
+        let dataMax = data.max() ?? 1
+        let midPrice = (dataMin + dataMax) / 2
+        let minRange = midPrice * 0.04  // 4% minimum range
+        let actualRange = dataMax - dataMin
+
+        if actualRange >= minRange {
+            return (dataMin, dataMax, actualRange)
+        } else {
+            let halfMinRange = minRange / 2
+            return (midPrice - halfMinRange, midPrice + halfMinRange, minRange)
+        }
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let data = prices.map { $0.price }
-            let minPrice = data.min() ?? 0
-            let maxPrice = data.max() ?? 1
-            let range = maxPrice - minPrice
-            let normalizedRange = range > 0 ? range : 1
+            let axisRange = calculateAxisRange(data: data)
+            let minPrice = axisRange.min
+            let normalizedRange = axisRange.range > 0 ? axisRange.range : 1
 
             Path { path in
                 guard data.count > 1 else { return }

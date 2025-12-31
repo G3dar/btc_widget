@@ -62,7 +62,7 @@ class LiveActivityManager: ObservableObject {
         // End any existing activity first
         for activity in Activity<BTCActivityAttributes>.activities {
             Task {
-                await activity.end(dismissalPolicy: .immediate)
+                await activity.end(activity.content, dismissalPolicy: .immediate)
             }
         }
 
@@ -117,7 +117,7 @@ class LiveActivityManager: ObservableObject {
         guard let activity = currentActivity else { return }
 
         Task {
-            await activity.end(dismissalPolicy: .immediate)
+            await activity.end(activity.content, dismissalPolicy: .immediate)
             await MainActor.run {
                 currentActivity = nil
                 isActivityActive = false

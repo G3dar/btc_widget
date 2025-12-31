@@ -36,7 +36,7 @@ extension Date {
     func formattedForChart(in range: TimeRange) -> String {
         let formatter = DateFormatter()
         switch range {
-        case .sixHours, .twentyFourHours:
+        case .threeHours, .sixHours, .twelveHours, .twentyFourHours:
             formatter.dateFormat = "HH:mm"
         case .sevenDays:
             formatter.dateFormat = "EEE"

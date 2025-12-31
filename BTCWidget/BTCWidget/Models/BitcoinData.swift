@@ -3,7 +3,9 @@ import Foundation
 // MARK: - Time Range Selection
 
 enum TimeRange: String, CaseIterable, Identifiable {
+    case threeHours = "3H"
     case sixHours = "6H"
+    case twelveHours = "12H"
     case twentyFourHours = "24H"
     case sevenDays = "7D"
     case thirtyDays = "30D"
@@ -12,7 +14,9 @@ enum TimeRange: String, CaseIterable, Identifiable {
 
     var days: Double {
         switch self {
-        case .sixHours: return 0.25
+        case .threeHours: return 0.125    // 3 hours
+        case .sixHours: return 0.25       // 6 hours
+        case .twelveHours: return 0.5     // 12 hours
         case .twentyFourHours: return 1
         case .sevenDays: return 7
         case .thirtyDays: return 30

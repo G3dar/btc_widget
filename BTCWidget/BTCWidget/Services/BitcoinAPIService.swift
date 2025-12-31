@@ -21,24 +21,37 @@ enum APIError: Error, LocalizedError {
 }
 
 // Binance API response models
-struct BinancePrice: Codable {
+struct BinancePrice: Codable, Sendable {
     let symbol: String
     let price: String
 }
 
-struct BinanceKline: Codable {
+struct BinanceKline: Sendable {
     let openTime: Int64
     let open: Double
     let high: Double
     let low: Double
     let close: Double
+}
 
-    init(from data: [Any]) {
-        openTime = (data[0] as? Int64) ?? 0
-        open = Double((data[1] as? String) ?? "0") ?? 0
-        high = Double((data[2] as? String) ?? "0") ?? 0
-        low = Double((data[3] as? String) ?? "0") ?? 0
-        close = Double((data[4] as? String) ?? "0") ?? 0
+// MARK: - JSON Helpers (nonisolated for Swift 6 compatibility)
+
+private struct BitcoinJSON {
+    nonisolated static func decodePrice(from data: Data) throws -> BinancePrice {
+        try JSONDecoder().decode(BinancePrice.self, from: data)
+    }
+
+    nonisolated static func parseKlines(from data: Data) throws -> [BinanceKline] {
+        let rawKlines = try JSONSerialization.jsonObject(with: data) as? [[Any]] ?? []
+        return rawKlines.map { klineData in
+            BinanceKline(
+                openTime: (klineData[0] as? Int64) ?? 0,
+                open: Double((klineData[1] as? String) ?? "0") ?? 0,
+                high: Double((klineData[2] as? String) ?? "0") ?? 0,
+                low: Double((klineData[3] as? String) ?? "0") ?? 0,
+                close: Double((klineData[4] as? String) ?? "0") ?? 0
+            )
+        }
     }
 }
 
@@ -67,7 +80,6 @@ actor BitcoinAPIService {
             return PricePoint(timestamp: timestamp, price: kline.close)
         }
 
-        let priceValues = klines.map { $0.close }
         let highPrice = klines.map { $0.high }.max() ?? currentPrice
         let lowPrice = klines.map { $0.low }.min() ?? currentPrice
 
@@ -94,15 +106,29 @@ actor BitcoinAPIService {
             throw APIError.invalidURL
         }
 
-        do {
-            let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.addValue("no-cache, no-store, must-revalidate", forHTTPHeaderField: "Cache-Control")
+        request.addValue("no-cache", forHTTPHeaderField: "Pragma")
+        request.addValue("0", forHTTPHeaderField: "Expires")
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode) else {
+        do {
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
                 throw APIError.invalidResponse
             }
 
-            let decoded = try JSONDecoder().decode(BinancePrice.self, from: data)
+            // Check for error status codes and extract error message
+            if httpResponse.statusCode >= 400 {
+                if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let errorMsg = errorJson["msg"] as? String {
+                    throw APIError.networkError(NSError(domain: "Binance", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorMsg]))
+                }
+                throw APIError.networkError(NSError(domain: "Binance", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode)"]))
+            }
+
+            let decoded = try BitcoinJSON.decodePrice(from: data)
             return Double(decoded.price) ?? 0
         } catch let error as APIError {
             throw error
@@ -118,9 +144,15 @@ actor BitcoinAPIService {
         let limit: Int
 
         switch range {
+        case .threeHours:
+            interval = "1m"
+            limit = 180 // 3 hours of 1-min candles
         case .sixHours:
             interval = "5m"
             limit = 72  // 6 hours of 5-min candles
+        case .twelveHours:
+            interval = "5m"
+            limit = 144 // 12 hours of 5-min candles
         case .twentyFourHours:
             interval = "15m"
             limit = 96  // 24 hours of 15-min candles
@@ -136,16 +168,29 @@ actor BitcoinAPIService {
             throw APIError.invalidURL
         }
 
-        do {
-            let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.addValue("no-cache, no-store, must-revalidate", forHTTPHeaderField: "Cache-Control")
+        request.addValue("no-cache", forHTTPHeaderField: "Pragma")
+        request.addValue("0", forHTTPHeaderField: "Expires")
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode) else {
+        do {
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
                 throw APIError.invalidResponse
             }
 
-            let rawKlines = try JSONSerialization.jsonObject(with: data) as? [[Any]] ?? []
-            return rawKlines.map { BinanceKline(from: $0) }
+            // Check for error status codes and extract error message
+            if httpResponse.statusCode >= 400 {
+                if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let errorMsg = errorJson["msg"] as? String {
+                    throw APIError.networkError(NSError(domain: "Binance", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorMsg]))
+                }
+                throw APIError.networkError(NSError(domain: "Binance", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode)"]))
+            }
+
+            return try BitcoinJSON.parseKlines(from: data)
         } catch let error as APIError {
             throw error
         } catch let error as DecodingError {

@@ -16,14 +16,33 @@ struct InteractiveChartView: View {
         [lineColor.opacity(0.3), lineColor.opacity(0.0)]
     }
 
+    // Minimum 4% range for Y-axis to avoid exaggerating small fluctuations
+    private var yAxisRange: (min: Double, max: Double) {
+        let prices = data.priceHistory.map { $0.price }
+        let dataMin = prices.min() ?? data.currentPrice
+        let dataMax = prices.max() ?? data.currentPrice
+        let midPrice = (dataMin + dataMax) / 2
+
+        // Minimum range is 4% of the mid price (2% above and below)
+        let minRange = midPrice * 0.04
+        let actualRange = dataMax - dataMin
+
+        if actualRange >= minRange {
+            // Data range is already >= 4%, use actual data with small margin
+            return (dataMin * 0.999, dataMax * 1.001)
+        } else {
+            // Expand to minimum 4% range, centered on midpoint
+            let halfMinRange = minRange / 2
+            return (midPrice - halfMinRange, midPrice + halfMinRange)
+        }
+    }
+
     private var yAxisMin: Double {
-        let min = data.priceHistory.map { $0.price }.min() ?? 0
-        return min * 0.999
+        yAxisRange.min
     }
 
     private var yAxisMax: Double {
-        let max = data.priceHistory.map { $0.price }.max() ?? 0
-        return max * 1.001
+        yAxisRange.max
     }
 
     var body: some View {
@@ -139,7 +158,8 @@ struct InteractiveChartView: View {
     }
 
     private func selectPoint(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
-        let xPosition = location.x - geometry[proxy.plotAreaFrame].origin.x
+        guard let plotFrame = proxy.plotFrame else { return }
+        let xPosition = location.x - geometry[plotFrame].origin.x
 
         guard xPosition >= 0,
               let date: Date = proxy.value(atX: xPosition) else {
