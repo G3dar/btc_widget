@@ -66,32 +66,31 @@ impl TrailingOrder {
         }
     }
 
-    /// Calculate the new order price based on current market price
+    /// Calculate the new order price based on reference price
     /// Returns Some(new_price) if order should be adjusted, None otherwise
-    pub fn calculate_adjustment(&self, market_price: f64) -> Option<f64> {
+    ///
+    /// Note: This should be called AFTER update_reference() so reference_price
+    /// reflects the best price seen (lowest for BUY, highest for SELL)
+    pub fn calculate_adjustment(&self, _market_price: f64) -> Option<f64> {
         match self.side {
             OrderSide::Buy => {
-                // BUY trailing: if market drops, follow it down
-                // Order stays at reference + trailing%
-                if market_price < self.reference_price {
-                    let new_price = market_price * (1.0 + self.trailing_percent / 100.0);
-                    // Only adjust if new price is significantly lower (> 0.1%)
-                    let price_diff = (self.current_order_price - new_price) / self.current_order_price;
-                    if price_diff > 0.001 {
-                        return Some(round_price(new_price));
-                    }
+                // BUY trailing: order should be at reference + trailing%
+                // Reference is the lowest market price seen
+                let target_price = self.reference_price * (1.0 + self.trailing_percent / 100.0);
+                // Only adjust if current order is significantly higher than target (> 0.1%)
+                let price_diff = (self.current_order_price - target_price) / self.current_order_price;
+                if price_diff > 0.001 {
+                    return Some(round_price(target_price));
                 }
             }
             OrderSide::Sell => {
-                // SELL trailing: if market rises, follow it up
-                // Order stays at reference - trailing%
-                if market_price > self.reference_price {
-                    let new_price = market_price * (1.0 - self.trailing_percent / 100.0);
-                    // Only adjust if new price is significantly higher (> 0.1%)
-                    let price_diff = (new_price - self.current_order_price) / self.current_order_price;
-                    if price_diff > 0.001 {
-                        return Some(round_price(new_price));
-                    }
+                // SELL trailing: order should be at reference - trailing%
+                // Reference is the highest market price seen
+                let target_price = self.reference_price * (1.0 - self.trailing_percent / 100.0);
+                // Only adjust if current order is significantly lower than target (> 0.1%)
+                let price_diff = (target_price - self.current_order_price) / self.current_order_price;
+                if price_diff > 0.001 {
+                    return Some(round_price(target_price));
                 }
             }
         }
