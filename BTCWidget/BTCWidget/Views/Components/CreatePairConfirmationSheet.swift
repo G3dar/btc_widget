@@ -209,7 +209,7 @@ struct CreatePairConfirmationSheet: View {
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Estimated Profit")
+                    Text("Net Profit (after fees)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     HStack(spacing: 4) {
@@ -225,12 +225,12 @@ struct CreatePairConfirmationSheet: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text("After Fees")
+                    Text("Fees")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Text(profit.formattedCommission)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.red.opacity(0.7))
                 }
             }
             .padding()
