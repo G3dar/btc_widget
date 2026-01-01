@@ -22,6 +22,16 @@ struct SimulatedFill: Codable, Identifiable, Sendable {
         self.sellOrderId = sellOrderId
         self.createdAt = Date()
     }
+
+    init(buyPrice: Double, sellPrice: Double, quantity: Double, amountUSD: Double, sellOrderId: Int64) {
+        self.id = UUID()
+        self.buyPrice = buyPrice
+        self.sellPrice = sellPrice
+        self.quantity = quantity
+        self.amountUSD = amountUSD
+        self.sellOrderId = sellOrderId
+        self.createdAt = Date()
+    }
 }
 
 /// Manages pending trading pairs - buy orders that are waiting to fill,
@@ -131,6 +141,35 @@ class PendingPairManager: ObservableObject {
     /// Clear all simulated fills
     func clearSimulatedFills() {
         simulatedFills.removeAll()
+        saveSimulatedFills()
+    }
+
+    /// Update sell price for a simulated fill (after modifying order on Binance)
+    func updateSimulatedFillSellPrice(sellOrderId: Int64, newSellPrice: Double, newOrderId: Int64) {
+        if let index = simulatedFills.firstIndex(where: { $0.sellOrderId == sellOrderId }) {
+            let old = simulatedFills[index]
+            let updated = SimulatedFill(
+                buyPrice: old.buyPrice,
+                sellPrice: newSellPrice,
+                quantity: old.quantity,
+                amountUSD: old.amountUSD,
+                sellOrderId: newOrderId
+            )
+            simulatedFills[index] = updated
+            saveSimulatedFills()
+        }
+    }
+
+    /// Import a simulated fill directly (for importing existing orders)
+    func importSimulatedFill(buyPrice: Double, sellPrice: Double, quantity: Double, sellOrderId: Int64) {
+        let fill = SimulatedFill(
+            buyPrice: buyPrice,
+            sellPrice: sellPrice,
+            quantity: quantity,
+            amountUSD: buyPrice * quantity,
+            sellOrderId: sellOrderId
+        )
+        simulatedFills.append(fill)
         saveSimulatedFills()
     }
 

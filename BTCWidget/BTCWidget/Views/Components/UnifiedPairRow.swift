@@ -87,6 +87,12 @@ struct UnifiedPairRow: View {
         }
     }
 
+    /// The USDT value when the sell order fills (quantity * sell price)
+    private var saleValue: Double {
+        let sellP = isEditingSell ? editSellPrice : sellPrice
+        return sellP * quantity
+    }
+
     /// Current P&L if we closed at market price (State 2 only)
     private var pnlAtMarket: Double {
         switch state {
@@ -123,6 +129,12 @@ struct UnifiedPairRow: View {
                     Text("BUY PENDING")
                         .font(.caption2.bold())
                         .foregroundColor(.secondary)
+                    Text("•")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(formatCompactAmount(saleValue))
+                        .font(.caption2)
+                        .foregroundColor(isEditingSell ? .orange : .secondary)
                 }
                 Spacer()
                 Text(pair.timeAgo)
@@ -137,12 +149,31 @@ struct UnifiedPairRow: View {
                     Text("SELL PENDING")
                         .font(.caption2.bold())
                         .foregroundColor(.secondary)
+                    Text("•")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(formatCompactAmount(saleValue))
+                        .font(.caption2)
+                        .foregroundColor(isEditingSell ? .orange : .secondary)
                 }
                 Spacer()
                 Text("bought @ \(buyPrice.formatAsCurrency(maximumFractionDigits: 0))")
                     .font(.caption2)
                     .foregroundColor(.green)
             }
+        }
+    }
+
+    private func formatCompactAmount(_ amount: Double) -> String {
+        if amount >= 1000 {
+            let k = amount / 1000
+            if k == floor(k) {
+                return "$\(Int(k))K"
+            } else {
+                return String(format: "$%.1fK", k)
+            }
+        } else {
+            return "$\(Int(amount))"
         }
     }
 

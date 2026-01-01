@@ -101,11 +101,11 @@ struct AccountBalance: Codable, Sendable {
     }
 
     var usdtBalance: Double {
-        balance(for: "USDT")?.freeDouble ?? 0
+        balance(for: "USDT")?.totalDouble ?? 0
     }
 
     var btcBalance: Double {
-        balance(for: "BTC")?.freeDouble ?? 0
+        balance(for: "BTC")?.totalDouble ?? 0
     }
 }
 

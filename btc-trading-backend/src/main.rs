@@ -111,6 +111,7 @@ fn create_router(config: config::Config, apns: Arc<ApnsClient>) -> Router {
         .nest("/history", routes::history_routes())
         .nest("/price", routes::price_routes())
         .nest("/notifications", routes::notification_routes(apns))
+        .nest("/debug", routes::debug_routes())
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(config)

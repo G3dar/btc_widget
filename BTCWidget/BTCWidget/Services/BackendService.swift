@@ -134,16 +134,14 @@ struct BackendErrorResponse: Codable, Sendable {
 }
 
 
-// MARK: - JSON Helpers (nonisolated for Swift 6 compatibility)
+// MARK: - JSON Helpers (nonisolated global functions for Swift 6 compatibility)
 
-private struct JSON {
-    nonisolated static func encode(_ dict: [String: Any]) throws -> Data {
-        try JSONSerialization.data(withJSONObject: dict)
-    }
+private nonisolated func jsonEncode(_ dict: [String: Any]) throws -> Data {
+    try JSONSerialization.data(withJSONObject: dict)
+}
 
-    nonisolated static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
-        try JSONDecoder().decode(type, from: data)
-    }
+private nonisolated func jsonDecode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+    try JSONDecoder().decode(type, from: data)
 }
 
 // MARK: - Backend Service
@@ -187,7 +185,7 @@ actor BackendService {
             "device_id": deviceId,
             "device_name": deviceName
         ]
-        request.httpBody = try JSON.encode(body)
+        request.httpBody = try jsonEncode(body)
 
         let (data, response) = try await session.data(for: request)
 
@@ -196,13 +194,13 @@ actor BackendService {
         }
 
         if httpResponse.statusCode >= 400 {
-            if let errorResponse = try? JSON.decode(BackendErrorResponse.self, from: data) {
+            if let errorResponse = try? jsonDecode(BackendErrorResponse.self, from: data) {
                 throw BackendError.apiError(errorResponse.error, httpResponse.statusCode)
             }
             throw BackendError.apiError("HTTP \(httpResponse.statusCode)", httpResponse.statusCode)
         }
 
-        let loginResponse = try JSON.decode(LoginResponse.self, from: data)
+        let loginResponse = try jsonDecode(LoginResponse.self, from: data)
 
         self.token = loginResponse.token
         // Expire 1 minute early to avoid edge cases
@@ -225,7 +223,7 @@ actor BackendService {
     /// Get account balance
     func getBalance() async throws -> AccountBalance {
         let data = try await authenticatedRequest("/account/balance")
-        let response = try JSON.decode(BackendBalanceResponse.self, from: data)
+        let response = try jsonDecode(BackendBalanceResponse.self, from: data)
 
         // Convert to the existing AccountBalance format
         let balances = [
@@ -238,7 +236,7 @@ actor BackendService {
     /// Get open orders
     func getOpenOrders() async throws -> [BinanceOrder] {
         let data = try await authenticatedRequest("/account/orders")
-        let response = try JSON.decode(BackendOrdersResponse.self, from: data)
+        let response = try jsonDecode(BackendOrdersResponse.self, from: data)
 
         // Convert grid pairs and unpaired orders to flat array
         var orders: [BinanceOrder] = []
@@ -295,8 +293,8 @@ actor BackendService {
             "amount_usd": amountUSD
         ]
 
-        let data = try await authenticatedRequest("/grid/create", method: "POST", bodyData: try JSON.encode(body))
-        let response = try JSON.decode(BackendGridCreateResponse.self, from: data)
+        let data = try await authenticatedRequest("/grid/create", method: "POST", bodyData: try jsonEncode(body))
+        let response = try jsonDecode(BackendGridCreateResponse.self, from: data)
 
         // Convert to existing NewOrderResponse format
         let buyOrder = NewOrderResponse(
@@ -338,7 +336,7 @@ actor BackendService {
             let order_id: Int64
         }
 
-        let response = try JSON.decode(CancelResponse.self, from: data)
+        let response = try jsonDecode(CancelResponse.self, from: data)
         return CancelOrderResponse(
             symbol: "BTCUSDT",
             orderId: response.order_id,
@@ -351,7 +349,7 @@ actor BackendService {
     /// Get trade history
     func getTradeHistory(limit: Int = 100) async throws -> [BinanceTrade] {
         let data = try await authenticatedRequest("/history/trades?limit=\(limit)")
-        let response = try JSON.decode(BackendTradesResponse.self, from: data)
+        let response = try jsonDecode(BackendTradesResponse.self, from: data)
 
         // Convert completed pairs to flat array of trades
         var trades: [BinanceTrade] = []
@@ -398,8 +396,8 @@ actor BackendService {
             "quantity": quantity
         ]
 
-        let data = try await authenticatedRequest("/order/limit", method: "POST", bodyData: try JSON.encode(body))
-        let response = try JSON.decode(BackendNewOrderResponse.self, from: data)
+        let data = try await authenticatedRequest("/order/limit", method: "POST", bodyData: try jsonEncode(body))
+        let response = try jsonDecode(BackendNewOrderResponse.self, from: data)
 
         return NewOrderResponse(
             symbol: response.symbol,
@@ -422,8 +420,8 @@ actor BackendService {
             "quantity": quantity
         ]
 
-        let data = try await authenticatedRequest("/order/market", method: "POST", bodyData: try JSON.encode(body))
-        let response = try JSON.decode(BackendNewOrderResponse.self, from: data)
+        let data = try await authenticatedRequest("/order/market", method: "POST", bodyData: try jsonEncode(body))
+        let response = try jsonDecode(BackendNewOrderResponse.self, from: data)
 
         return NewOrderResponse(
             symbol: response.symbol,
@@ -444,7 +442,7 @@ actor BackendService {
     /// Register device token for push notifications
     func registerPushToken(_ deviceToken: String) async throws {
         let body: [String: Any] = ["device_token": deviceToken]
-        _ = try await authenticatedRequest("/notifications/register", method: "POST", bodyData: try JSON.encode(body))
+        _ = try await authenticatedRequest("/notifications/register", method: "POST", bodyData: try jsonEncode(body))
         print("Push token registered with backend")
     }
 
@@ -492,7 +490,7 @@ actor BackendService {
             }
 
             if httpResponse.statusCode >= 400 {
-                if let errorResponse = try? JSON.decode(BackendErrorResponse.self, from: data) {
+                if let errorResponse = try? jsonDecode(BackendErrorResponse.self, from: data) {
                     throw BackendError.apiError(errorResponse.error, httpResponse.statusCode)
                 }
                 throw BackendError.apiError("HTTP \(httpResponse.statusCode)", httpResponse.statusCode)
@@ -544,10 +542,12 @@ actor BackendService {
         let balanceStart = Date()
         do {
             let balance = try await getBalance()
+            let usdtAsset = balance.balances.first { $0.asset == "USDT" }
+            let usdtValue = Double(usdtAsset?.free ?? "0") ?? 0
             results.append(TestResult(
                 endpoint: "GET /account/balance",
                 success: true,
-                message: "OK - USDT: \(balance.usdtBalance.formatAsCurrency(maximumFractionDigits: 0))",
+                message: "OK - USDT: $\(Int(usdtValue))",
                 duration: Date().timeIntervalSince(balanceStart)
             ))
         } catch {

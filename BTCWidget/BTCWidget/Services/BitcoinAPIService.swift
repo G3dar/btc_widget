@@ -34,24 +34,22 @@ struct BinanceKline: Sendable {
     let close: Double
 }
 
-// MARK: - JSON Helpers (nonisolated for Swift 6 compatibility)
+// MARK: - JSON Helpers (nonisolated global functions for Swift 6 compatibility)
 
-private struct BitcoinJSON {
-    nonisolated static func decodePrice(from data: Data) throws -> BinancePrice {
-        try JSONDecoder().decode(BinancePrice.self, from: data)
-    }
+private nonisolated func decodeBinancePrice(from data: Data) throws -> BinancePrice {
+    try JSONDecoder().decode(BinancePrice.self, from: data)
+}
 
-    nonisolated static func parseKlines(from data: Data) throws -> [BinanceKline] {
-        let rawKlines = try JSONSerialization.jsonObject(with: data) as? [[Any]] ?? []
-        return rawKlines.map { klineData in
-            BinanceKline(
-                openTime: (klineData[0] as? Int64) ?? 0,
-                open: Double((klineData[1] as? String) ?? "0") ?? 0,
-                high: Double((klineData[2] as? String) ?? "0") ?? 0,
-                low: Double((klineData[3] as? String) ?? "0") ?? 0,
-                close: Double((klineData[4] as? String) ?? "0") ?? 0
-            )
-        }
+private nonisolated func parseBinanceKlines(from data: Data) throws -> [BinanceKline] {
+    let rawKlines = try JSONSerialization.jsonObject(with: data) as? [[Any]] ?? []
+    return rawKlines.map { klineData in
+        BinanceKline(
+            openTime: (klineData[0] as? Int64) ?? 0,
+            open: Double((klineData[1] as? String) ?? "0") ?? 0,
+            high: Double((klineData[2] as? String) ?? "0") ?? 0,
+            low: Double((klineData[3] as? String) ?? "0") ?? 0,
+            close: Double((klineData[4] as? String) ?? "0") ?? 0
+        )
     }
 }
 
@@ -128,7 +126,7 @@ actor BitcoinAPIService {
                 throw APIError.networkError(NSError(domain: "Binance", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode)"]))
             }
 
-            let decoded = try BitcoinJSON.decodePrice(from: data)
+            let decoded = try decodeBinancePrice(from: data)
             return Double(decoded.price) ?? 0
         } catch let error as APIError {
             throw error
@@ -190,7 +188,7 @@ actor BitcoinAPIService {
                 throw APIError.networkError(NSError(domain: "Binance", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode)"]))
             }
 
-            return try BitcoinJSON.parseKlines(from: data)
+            return try parseBinanceKlines(from: data)
         } catch let error as APIError {
             throw error
         } catch let error as DecodingError {

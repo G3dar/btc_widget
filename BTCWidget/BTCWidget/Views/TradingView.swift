@@ -106,6 +106,9 @@ struct TradingView: View {
                 )
             }
         }
+        .onChange(of: tradingSettings.isProduction) { _, _ in
+            clearAndReloadForEnvironmentChange()
+        }
         .alert("Create Trading Pair", isPresented: $showCreateConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Create") {
@@ -400,9 +403,18 @@ struct TradingView: View {
                 )
             }
 
-            // Debug: Simulated fills (sell orders placed without real buy trades)
+            // Imported positions (sell orders with stored buy prices)
             ForEach(pendingPairManager.simulatedFills) { fill in
-                simulatedFillRow(fill)
+                ImportedPositionRow(
+                    fill: fill,
+                    currentPrice: currentPrice,
+                    onClose: {
+                        closeSimulatedFillAtMarket(fill)
+                    },
+                    onModifySellPrice: { newPrice in
+                        modifySimulatedFillSellOrder(fill, newPrice: newPrice)
+                    }
+                )
             }
 
             // State 1: Pending pairs (buy pending, sell not placed yet)
@@ -425,140 +437,6 @@ struct TradingView: View {
                         simulateBuyFill(pair)
                     }
                 )
-            }
-        }
-    }
-
-    // MARK: - Simulated Fill Row (Debug)
-
-    @ViewBuilder
-    private func simulatedFillRow(_ fill: SimulatedFill) -> some View {
-        VStack(spacing: 8) {
-            // Header
-            HStack {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 8, height: 8)
-                    Text("SIMULATED SELL")
-                        .font(.caption2.bold())
-                        .foregroundColor(.orange)
-                }
-                Spacer()
-                Text("Debug")
-                    .font(.caption2)
-                    .foregroundColor(.orange)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().stroke(Color.orange, lineWidth: 1))
-            }
-
-            // Prices
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("BOUGHT (simulated)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text(fill.buyPrice.formatAsCurrency(maximumFractionDigits: 0))
-                        .font(.caption.bold())
-                        .foregroundColor(.green)
-                }
-
-                Spacer()
-
-                // P&L at market
-                let pnl = (currentPrice - fill.buyPrice) * fill.quantity
-                VStack(spacing: 2) {
-                    Text("P&L @ Market")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text("\(pnl >= 0 ? "+" : "")\(pnl.formatAsCurrency(maximumFractionDigits: 2))")
-                        .font(.caption.bold())
-                        .foregroundColor(pnl >= 0 ? .green : .red)
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("SELL TARGET")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text(fill.sellPrice.formatAsCurrency(maximumFractionDigits: 0))
-                        .font(.caption.bold())
-                        .foregroundColor(.red)
-                }
-            }
-
-            // Action buttons
-            HStack(spacing: 12) {
-                // Cancel button
-                Button {
-                    cancelSimulatedFill(fill)
-                } label: {
-                    Text("CANCEL")
-                        .font(.caption2.bold())
-                        .foregroundColor(.red)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .stroke(Color.red, lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.plain)
-
-                // Close at market button (if profit > 0)
-                if pnl > 0 {
-                    Button {
-                        closeSimulatedFillAtMarket(fill)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bolt.fill")
-                                .font(.caption2)
-                            Text("CLOSE FOR")
-                            Text("+\(pnl.formatAsCurrency(maximumFractionDigits: 2))")
-                                .bold()
-                        }
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(Color.green)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.orange.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                )
-        )
-    }
-
-    private func cancelSimulatedFill(_ fill: SimulatedFill) {
-        Task {
-            do {
-                // Cancel the sell order on Binance
-                _ = try await BinanceTradingService.shared.cancelOrder(orderId: fill.sellOrderId)
-
-                await MainActor.run {
-                    pendingPairManager.removeSimulatedFill(sellOrderId: fill.sellOrderId)
-                    loadTradingData()
-                }
-            } catch {
-                await MainActor.run {
-                    // Remove anyway - order might already be filled/cancelled
-                    pendingPairManager.removeSimulatedFill(sellOrderId: fill.sellOrderId)
-                    loadTradingData()
-                }
             }
         }
     }
@@ -597,6 +475,42 @@ struct TradingView: View {
         }
     }
 
+    /// Modify the sell order price for an imported/simulated fill
+    private func modifySimulatedFillSellOrder(_ fill: SimulatedFill, newPrice: Double) {
+        Task {
+            do {
+                // Cancel existing sell order
+                _ = try await BinanceTradingService.shared.cancelOrder(orderId: fill.sellOrderId)
+                print("[ModifySimulated] Cancelled old sell order \(fill.sellOrderId)")
+
+                // Create new sell order at new price
+                let newOrder = try await BinanceTradingService.shared.createLimitOrder(
+                    side: .sell,
+                    price: newPrice,
+                    quantity: fill.quantity
+                )
+                print("[ModifySimulated] ✅ New sell order placed at \(newPrice): \(newOrder.orderId)")
+
+                await MainActor.run {
+                    // Update local storage with new price and order ID
+                    pendingPairManager.updateSimulatedFillSellPrice(
+                        sellOrderId: fill.sellOrderId,
+                        newSellPrice: newPrice,
+                        newOrderId: newOrder.orderId
+                    )
+                    loadTradingData()
+                }
+            } catch {
+                print("[ModifySimulated] ❌ Error: \(error)")
+                await MainActor.run {
+                    orderError = "Modify failed: \(error.localizedDescription)"
+                    showErrorAlert = true
+                    loadTradingData()
+                }
+            }
+        }
+    }
+
     // MARK: - No Credentials View
 
     private var noCredentialsView: some View {
@@ -623,6 +537,19 @@ struct TradingView: View {
             buyPrice = currentPrice * 0.95  // Default 5% below
             sellPrice = currentPrice * 1.05  // Default 5% above
         }
+    }
+
+    /// Clear all data and reload when switching between testnet/production
+    private func clearAndReloadForEnvironmentChange() {
+        // Clear all cached data from previous environment
+        openPositions = []
+        completedPairs = []
+        tradingState.openOrders = []
+        tradingState.accountBalance = nil
+        tradingState.error = nil
+
+        // Reload data from the new environment
+        loadTradingData()
     }
 
     private func loadTradingData() {
@@ -688,7 +615,7 @@ struct TradingView: View {
 
                     let buyTrade = trades.first { $0.orderId == pair.buyOrderId && $0.isBuyer }
 
-                    if let trade = buyTrade {
+                    if buyTrade != nil {
                         // Buy order filled! Place the sell order now
                         print("[FillCheck] ✅ Buy order \(pair.buyOrderId) filled! Placing sell order at \(pair.intendedSellPrice), qty=\(pair.quantity)")
 

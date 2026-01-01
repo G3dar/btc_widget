@@ -8,13 +8,14 @@ use axum::{
 use serde::Serialize;
 
 use crate::auth::auth_middleware;
-use crate::binance::BinanceClient;
+use crate::binance::{BinanceClient, Trade};
 use crate::config::Config;
 use crate::trading::{calculate_profit_summary, match_completed_pairs, CompletedPair, ProfitSummary};
 
 pub fn history_routes() -> Router<Config> {
     Router::new()
         .route("/trades", get(get_trade_history))
+        .route("/trades/raw", get(get_raw_trades))
         .route("/profit", get(get_profit_summary))
         .route_layer(middleware::from_fn_with_state(
             Config::from_env(),
@@ -103,4 +104,45 @@ async fn get_profit_summary(
     let summary = calculate_profit_summary(&pairs);
 
     Ok(Json(summary))
+}
+
+#[derive(Serialize)]
+pub struct RawTradesResponse {
+    trades: Vec<Trade>,
+    buy_trades: Vec<Trade>,
+    sell_trades: Vec<Trade>,
+}
+
+/// Get raw trades (not matched into pairs)
+async fn get_raw_trades(
+    State(config): State<Config>,
+    headers: HeaderMap,
+) -> Result<Json<RawTradesResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let use_production = use_production_from_headers(&headers);
+    let client = BinanceClient::for_environment(&config, use_production).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
+
+    let trades = client.get_trades(100).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
+
+    let buy_trades: Vec<Trade> = trades.iter().filter(|t| t.is_buyer).cloned().collect();
+    let sell_trades: Vec<Trade> = trades.iter().filter(|t| !t.is_buyer).cloned().collect();
+
+    Ok(Json(RawTradesResponse {
+        trades,
+        buy_trades,
+        sell_trades,
+    }))
 }

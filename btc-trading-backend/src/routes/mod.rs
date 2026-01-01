@@ -1,5 +1,6 @@
 mod account;
 mod auth;
+mod debug;
 mod grid;
 mod history;
 mod notifications;
@@ -8,6 +9,7 @@ mod price;
 
 pub use account::account_routes;
 pub use auth::auth_routes;
+pub use debug::debug_routes;
 pub use grid::grid_routes;
 pub use history::history_routes;
 pub use notifications::notification_routes;
