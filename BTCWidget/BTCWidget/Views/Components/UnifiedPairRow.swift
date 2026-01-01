@@ -132,9 +132,9 @@ struct UnifiedPairRow: View {
                     Text("•")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text(formatCompactAmount(saleValue))
+                    Text(formatCompactAmount(amountUSD))
                         .font(.caption2)
-                        .foregroundColor(isEditingSell ? .orange : .secondary)
+                        .foregroundColor(.secondary)
                 }
                 Spacer()
                 Text(pair.timeAgo)
