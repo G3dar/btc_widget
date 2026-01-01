@@ -388,13 +388,17 @@ actor BackendService {
 
     // MARK: - Individual Order Methods
 
-    /// Create a single limit order
-    func createLimitOrder(side: OrderSide, price: Double, quantity: Double) async throws -> NewOrderResponse {
-        let body: [String: Any] = [
+    /// Create a single limit order with optional trailing percentage
+    func createLimitOrder(side: OrderSide, price: Double, quantity: Double, trailingPercent: Double? = nil) async throws -> NewOrderResponse {
+        var body: [String: Any] = [
             "side": side.rawValue,
             "price": price,
             "quantity": quantity
         ]
+
+        if let trailing = trailingPercent, trailing > 0 {
+            body["trailing_percent"] = trailing
+        }
 
         let data = try await authenticatedRequest("/order/limit", method: "POST", bodyData: try jsonEncode(body))
         let response = try jsonDecode(BackendNewOrderResponse.self, from: data)

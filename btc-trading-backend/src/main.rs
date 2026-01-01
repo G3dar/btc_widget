@@ -4,6 +4,7 @@ mod config;
 mod notifications;
 mod routes;
 mod trading;
+mod trailing;
 
 use axum::{
     http::{HeaderValue, Method},
@@ -18,6 +19,7 @@ use tower_http::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use notifications::{ApnsClient, OrderMonitor};
+use trailing::TrailingMonitor;
 
 #[tokio::main]
 async fn main() {
@@ -85,8 +87,15 @@ async fn main() {
         monitor.start().await;
     });
 
+    // Initialize trailing order monitor
+    let trailing_monitor = Arc::new(TrailingMonitor::new(config.clone()));
+    let trailing_monitor_task = trailing_monitor.clone();
+    tokio::spawn(async move {
+        trailing_monitor_task.start().await;
+    });
+
     // Build application with routes
-    let app = create_router(config.clone(), apns);
+    let app = create_router(config.clone(), apns, trailing_monitor);
 
     // Start server
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
@@ -96,7 +105,7 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-fn create_router(config: config::Config, apns: Arc<ApnsClient>) -> Router {
+fn create_router(config: config::Config, apns: Arc<ApnsClient>, trailing_monitor: Arc<TrailingMonitor>) -> Router {
     // CORS configuration - restrict in production
     let cors = CorsLayer::new()
         .allow_origin(Any) // In production, restrict to your app's requests
@@ -107,7 +116,8 @@ fn create_router(config: config::Config, apns: Arc<ApnsClient>) -> Router {
         .nest("/auth", routes::auth_routes())
         .nest("/account", routes::account_routes())
         .nest("/grid", routes::grid_routes())
-        .nest("/order", routes::order_routes())
+        .nest("/order", routes::order_routes(trailing_monitor.clone()))
+        .nest("/trailing", routes::trailing_routes(trailing_monitor))
         .nest("/history", routes::history_routes())
         .nest("/price", routes::price_routes())
         .nest("/notifications", routes::notification_routes(apns))

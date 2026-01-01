@@ -6,12 +6,26 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::auth::auth_middleware;
 use crate::binance::{BinanceClient, NewOrderResponse};
 use crate::config::Config;
+use crate::trailing::TrailingMonitor;
 
-pub fn order_routes() -> Router<Config> {
+/// State for order routes that includes trailing monitor
+#[derive(Clone)]
+pub struct OrderAppState {
+    pub config: Config,
+    pub trailing_monitor: Arc<TrailingMonitor>,
+}
+
+pub fn order_routes(trailing_monitor: Arc<TrailingMonitor>) -> Router<Config> {
+    let state = OrderAppState {
+        config: Config::from_env(),
+        trailing_monitor,
+    };
+
     Router::new()
         .route("/limit", post(create_limit_order))
         .route("/market", post(create_market_order))
@@ -19,6 +33,7 @@ pub fn order_routes() -> Router<Config> {
             Config::from_env(),
             auth_middleware,
         ))
+        .with_state(state)
 }
 
 /// Extract use_production flag from X-Use-Production header
@@ -35,6 +50,8 @@ pub struct CreateLimitOrderRequest {
     pub side: String,      // "BUY" or "SELL"
     pub price: f64,
     pub quantity: f64,
+    /// Optional trailing percentage (e.g., 1.0 = 1%)
+    pub trailing_percent: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -51,9 +68,9 @@ pub struct ErrorResponse {
     error: String,
 }
 
-/// Create a single limit order
+/// Create a single limit order with optional trailing
 async fn create_limit_order(
-    State(config): State<Config>,
+    State(state): State<OrderAppState>,
     headers: HeaderMap,
     Json(request): Json<CreateLimitOrderRequest>,
 ) -> Result<Json<NewOrderResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -89,7 +106,7 @@ async fn create_limit_order(
     }
 
     let use_production = use_production_from_headers(&headers);
-    let client = BinanceClient::for_environment(&config, use_production).map_err(|e| {
+    let client = BinanceClient::for_environment(&state.config, use_production).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -110,19 +127,49 @@ async fn create_limit_order(
             )
         })?;
 
-    tracing::info!(
-        "Created {} limit order @ {} qty {}",
-        side,
-        request.price,
-        request.quantity
-    );
+    // If trailing_percent is specified, add to trailing monitor
+    if let Some(trailing_percent) = request.trailing_percent {
+        if trailing_percent > 0.0 {
+            let trailing_id = state.trailing_monitor.add_from_request(
+                order.orderId,
+                &side,
+                request.price,
+                request.quantity,
+                trailing_percent,
+                use_production,
+            ).await;
+
+            tracing::info!(
+                "Created {} limit order @ {} qty {} with {}% trailing ({})",
+                side,
+                request.price,
+                request.quantity,
+                trailing_percent,
+                trailing_id
+            );
+        } else {
+            tracing::info!(
+                "Created {} limit order @ {} qty {}",
+                side,
+                request.price,
+                request.quantity
+            );
+        }
+    } else {
+        tracing::info!(
+            "Created {} limit order @ {} qty {}",
+            side,
+            request.price,
+            request.quantity
+        );
+    }
 
     Ok(Json(order))
 }
 
 /// Create a market order (immediate execution at current price)
 async fn create_market_order(
-    State(config): State<Config>,
+    State(state): State<OrderAppState>,
     headers: HeaderMap,
     Json(request): Json<CreateMarketOrderRequest>,
 ) -> Result<Json<NewOrderResponse>, (StatusCode, Json<ErrorResponse>)> {
@@ -148,7 +195,7 @@ async fn create_market_order(
     }
 
     let use_production = use_production_from_headers(&headers);
-    let client = BinanceClient::for_environment(&config, use_production).map_err(|e| {
+    let client = BinanceClient::for_environment(&state.config, use_production).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {

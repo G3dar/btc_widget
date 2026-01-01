@@ -147,10 +147,10 @@ actor BinanceTradingService {
         }
     }
 
-    /// Create a limit order
-    func createLimitOrder(side: OrderSide, price: Double, quantity: Double) async throws -> NewOrderResponse {
+    /// Create a limit order with optional trailing percentage
+    func createLimitOrder(side: OrderSide, price: Double, quantity: Double, trailingPercent: Double? = nil) async throws -> NewOrderResponse {
         do {
-            return try await BackendService.shared.createLimitOrder(side: side, price: price, quantity: quantity)
+            return try await BackendService.shared.createLimitOrder(side: side, price: price, quantity: quantity, trailingPercent: trailingPercent)
         } catch let error as BackendError {
             throw mapBackendError(error)
         }

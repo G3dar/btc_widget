@@ -11,7 +11,11 @@ struct PendingPair: Codable, Identifiable, Sendable {
     let amountUSD: Double           // USD amount invested
     let createdAt: Date
 
-    init(buyOrderId: Int64, buyPrice: Double, intendedSellPrice: Double, quantity: Double, amountUSD: Double) {
+    // Trailing order percentages (0 = disabled)
+    let buyTrailingPercent: Double
+    let sellTrailingPercent: Double
+
+    init(buyOrderId: Int64, buyPrice: Double, intendedSellPrice: Double, quantity: Double, amountUSD: Double, buyTrailingPercent: Double = 0, sellTrailingPercent: Double = 0) {
         self.id = UUID()
         self.buyOrderId = buyOrderId
         self.buyPrice = buyPrice
@@ -19,6 +23,20 @@ struct PendingPair: Codable, Identifiable, Sendable {
         self.quantity = quantity
         self.amountUSD = amountUSD
         self.createdAt = Date()
+        self.buyTrailingPercent = buyTrailingPercent
+        self.sellTrailingPercent = sellTrailingPercent
+    }
+
+    var hasBuyTrailing: Bool {
+        buyTrailingPercent > 0
+    }
+
+    var hasSellTrailing: Bool {
+        sellTrailingPercent > 0
+    }
+
+    var hasAnyTrailing: Bool {
+        hasBuyTrailing || hasSellTrailing
     }
 
     // MARK: - Computed Properties

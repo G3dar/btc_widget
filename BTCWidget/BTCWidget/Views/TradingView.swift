@@ -12,6 +12,10 @@ struct TradingView: View {
     @State private var sellPrice: Double = 0
     @State private var showCreateConfirmation = false
     @State private var isCreatingPair = false
+
+    // Trailing order percentages
+    @State private var buyTrailingPercent: Double = 0
+    @State private var sellTrailingPercent: Double = 0
     @State private var orderError: String?
     @State private var showErrorAlert = false
     @State private var completedPairs: [CompletedGridPair] = []
@@ -109,15 +113,24 @@ struct TradingView: View {
         .onChange(of: tradingSettings.isProduction) { _, _ in
             clearAndReloadForEnvironmentChange()
         }
-        .alert("Create Trading Pair", isPresented: $showCreateConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Create") {
-                createPendingPair()
-            }
-        } message: {
-            let profit = ProfitCalculation(buyPrice: buyPrice, sellPrice: sellPrice, amount: effectiveAmount)
-            let safeModeText = (tradingSettings.isProduction && tradingSettings.safeMode) ? "\n\n⚠️ SAFE MODE: Using \(effectiveAmount.formatAsCurrency(maximumFractionDigits: 2))" : ""
-            Text("Place BUY order at \(buyPrice.formatAsCurrency(maximumFractionDigits: 0))\n\nSell will be placed at \(sellPrice.formatAsCurrency(maximumFractionDigits: 0)) when buy fills.\n\nAmount: \(effectiveAmount.formatAsCurrency(maximumFractionDigits: 2))\nPotential profit: \(profit.formattedProfit) (\(profit.formattedPercentage))\(safeModeText)")
+        .sheet(isPresented: $showCreateConfirmation) {
+            CreatePairConfirmationSheet(
+                buyPrice: buyPrice,
+                sellPrice: sellPrice,
+                amount: effectiveAmount,
+                currentPrice: currentPrice,
+                isSafeMode: tradingSettings.isProduction && tradingSettings.safeMode,
+                buyTrailingPercent: $buyTrailingPercent,
+                sellTrailingPercent: $sellTrailingPercent,
+                onCreate: {
+                    createPendingPair()
+                },
+                onCancel: {
+                    // Reset trailing percentages when cancelled
+                    buyTrailingPercent = 0
+                    sellTrailingPercent = 0
+                }
+            )
         }
         .alert("Cancel Pending Pair", isPresented: $showCancelPendingPair) {
             Button("Keep", role: .cancel) {}
@@ -645,25 +658,32 @@ struct TradingView: View {
     private func createPendingPair() {
         isCreatingPair = true
 
+        // Capture trailing values before async
+        let buyTrailing = buyTrailingPercent
+        let sellTrailing = sellTrailingPercent
+
         Task {
             do {
                 // Calculate quantity
                 let quantity = effectiveAmount / buyPrice
 
-                // Create only the BUY order
+                // Create only the BUY order with optional trailing
                 let buyOrder = try await BinanceTradingService.shared.createLimitOrder(
                     side: .buy,
                     price: buyPrice,
-                    quantity: quantity
+                    quantity: quantity,
+                    trailingPercent: buyTrailing > 0 ? buyTrailing : nil
                 )
 
-                // Store pending pair locally with intended sell price
+                // Store pending pair locally with intended sell price and trailing info
                 let pendingPair = PendingPair(
                     buyOrderId: buyOrder.orderId,
                     buyPrice: buyPrice,
                     intendedSellPrice: sellPrice,
                     quantity: quantity,
-                    amountUSD: effectiveAmount
+                    amountUSD: effectiveAmount,
+                    buyTrailingPercent: buyTrailing,
+                    sellTrailingPercent: sellTrailing
                 )
 
                 await MainActor.run {
@@ -674,6 +694,8 @@ struct TradingView: View {
                     // Reset sliders for next pair
                     self.buyPrice = currentPrice * 0.95
                     self.sellPrice = currentPrice * 1.05
+                    self.buyTrailingPercent = 0
+                    self.sellTrailingPercent = 0
                 }
             } catch {
                 await MainActor.run {

@@ -135,6 +135,14 @@ struct UnifiedPairRow: View {
                     Text(formatCompactAmount(amountUSD))
                         .font(.caption2)
                         .foregroundColor(.secondary)
+
+                    // Trailing badges
+                    if pair.hasBuyTrailing {
+                        trailingBadge(percent: pair.buyTrailingPercent, color: .green)
+                    }
+                    if pair.hasSellTrailing {
+                        trailingBadge(percent: pair.sellTrailingPercent, color: .red)
+                    }
                 }
                 Spacer()
                 Text(pair.timeAgo)
@@ -175,6 +183,23 @@ struct UnifiedPairRow: View {
         } else {
             return "$\(Int(amount))"
         }
+    }
+
+    @ViewBuilder
+    private func trailingBadge(percent: Double, color: Color) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 8))
+            Text("\(String(format: "%.1f", percent))%")
+                .font(.system(size: 9, weight: .bold))
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(
+            Capsule()
+                .fill(color.opacity(0.15))
+        )
     }
 
     // MARK: - Slider View
