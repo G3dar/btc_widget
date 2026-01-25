@@ -50,3 +50,7 @@ iOSInjectionProject/
 *.swp
 *.lock
 *~
+
+# Rust
+target/
+Cargo.lock
