@@ -46,6 +46,9 @@ futures = "0.3"
 thiserror = "1"
 anyhow = "1"
 
+# UUID for trailing order IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
 # Apple Push Notifications
 a2 = "0.10"  # APNs client
 

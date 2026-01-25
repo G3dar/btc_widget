@@ -130,22 +130,27 @@ async fn create_limit_order(
     // If trailing_percent is specified, add to trailing monitor
     if let Some(trailing_percent) = request.trailing_percent {
         if trailing_percent > 0.0 {
+            // Get current market price for proper reference initialization
+            let market_price = client.get_price().await.unwrap_or(request.price);
+
             let trailing_id = state.trailing_monitor.add_from_request(
-                order.orderId,
+                order.order_id,
                 &side,
                 request.price,
+                market_price,
                 request.quantity,
                 trailing_percent,
                 use_production,
             ).await;
 
             tracing::info!(
-                "Created {} limit order @ {} qty {} with {}% trailing ({})",
+                "Created {} limit order @ {} qty {} with {}% trailing ({}) [market: {}]",
                 side,
                 request.price,
                 request.quantity,
                 trailing_percent,
-                trailing_id
+                trailing_id,
+                market_price
             );
         } else {
             tracing::info!(

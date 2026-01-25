@@ -96,7 +96,12 @@ impl TrailingMonitor {
         let market_price = price_client.get_price().await
             .map_err(|e| format!("Failed to get price: {}", e))?;
 
-        tracing::debug!("Checking trailing orders at price {}", market_price);
+        let order_count = self.orders.read().await.len();
+        tracing::info!(
+            "TrailingMonitor: checking {} orders at market price ${}",
+            order_count,
+            market_price
+        );
 
         // Get orders that need adjustment
         let adjustments: Vec<(Uuid, f64, TrailingOrder)> = {
@@ -104,11 +109,36 @@ impl TrailingMonitor {
             let mut adjustments = Vec::new();
 
             for (id, order) in orders.iter_mut() {
+                let old_reference = order.reference_price;
+
                 // First update reference price
                 order.update_reference(market_price);
 
+                if order.reference_price != old_reference {
+                    tracing::info!(
+                        "Order {}: reference updated {} -> {} (side={})",
+                        id, old_reference, order.reference_price, order.side.as_str()
+                    );
+                }
+
+                // Calculate target and check if adjustment is needed
+                let target = if order.side == crate::trailing::OrderSide::Buy {
+                    order.reference_price * (1.0 + order.trailing_percent / 100.0)
+                } else {
+                    order.reference_price * (1.0 - order.trailing_percent / 100.0)
+                };
+
+                tracing::debug!(
+                    "Order {}: current={}, reference={}, target={}, trailing={}%",
+                    id, order.current_order_price, order.reference_price, target, order.trailing_percent
+                );
+
                 // Check if adjustment is needed
                 if let Some(new_price) = order.calculate_adjustment(market_price) {
+                    tracing::info!(
+                        "Order {} needs adjustment: {} -> {} (target={})",
+                        id, order.current_order_price, new_price, target
+                    );
                     adjustments.push((*id, new_price, order.clone()));
                 }
             }
@@ -175,7 +205,7 @@ impl TrailingMonitor {
             .await
             .map_err(|e| format!("Modify order failed: {}", e))?;
 
-        Ok(new_order.orderId)
+        Ok(new_order.order_id)
     }
 }
 
@@ -184,11 +214,13 @@ pub type SharedTrailingMonitor = Arc<TrailingMonitor>;
 
 impl TrailingMonitor {
     /// Create from order creation request
+    /// market_price should be the current market price to properly initialize reference
     pub async fn add_from_request(
         &self,
         order_id: i64,
         side: &str,
-        price: f64,
+        order_price: f64,
+        market_price: f64,
         quantity: f64,
         trailing_percent: f64,
         use_production: bool,
@@ -203,9 +235,15 @@ impl TrailingMonitor {
             order_id,
             order_side,
             trailing_percent,
-            price,
+            order_price,
+            market_price,
             quantity,
             use_production,
+        );
+
+        tracing::info!(
+            "Trailing order created: side={}, order_price={}, market_price={}, trailing={}%",
+            side, order_price, market_price, trailing_percent
         );
 
         self.add_order(order).await

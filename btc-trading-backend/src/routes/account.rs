@@ -16,6 +16,8 @@ pub fn account_routes() -> Router<Config> {
     Router::new()
         .route("/balance", get(get_balance))
         .route("/orders", get(get_orders))
+        .route("/open-orders", get(get_open_orders_raw))
+        .route("/cancel/:order_id", axum::routing::delete(cancel_order))
         .route_layer(middleware::from_fn_with_state(
             Config::from_env(),
             auth_middleware,
@@ -159,5 +161,71 @@ async fn get_orders(
         total_orders: orders.len(),
         grid_pairs: pairs,
         unpaired_orders: unpaired,
+    }))
+}
+
+/// Get raw open orders from Binance (for debugging)
+async fn get_open_orders_raw(
+    State(config): State<Config>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Order>>, (StatusCode, Json<ErrorResponse>)> {
+    let use_production = use_production_from_headers(&headers);
+    let client = BinanceClient::for_environment(&config, use_production).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
+
+    let orders = client.get_open_orders().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
+
+    Ok(Json(orders))
+}
+
+#[derive(Serialize)]
+pub struct CancelResponse {
+    success: bool,
+    order_id: i64,
+}
+
+/// Cancel an order by ID
+async fn cancel_order(
+    State(config): State<Config>,
+    headers: HeaderMap,
+    axum::extract::Path(order_id): axum::extract::Path<i64>,
+) -> Result<Json<CancelResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let use_production = use_production_from_headers(&headers);
+    let client = BinanceClient::for_environment(&config, use_production).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
+
+    client.cancel_order(order_id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
+
+    tracing::info!("Cancelled order {}", order_id);
+
+    Ok(Json(CancelResponse {
+        success: true,
+        order_id,
     }))
 }
